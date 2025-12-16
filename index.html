@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Portable Finance Manager</title>
+    <style>
+        /* --- General Layout --- */
+        body { font-family: sans-serif; display: flex; flex-direction: column; align-items: center; background-color: #f0f0f0; padding: 20px; }
+        .dashboard-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; max-width: 800px; width: 100%; margin-bottom: 20px; }
+        
+        /* --- Boxes Styling (Based on your image) --- */
+        .box { padding: 20px; border-radius: 15px; text-align: center; box-shadow: 0 4px 8px rgba(0,0,0,0.1); }
+        .current-balance-box { grid-column: 1 / -1; background-color: #d1f2eb; }
+        #total-income-box { background-color: #a3e4d7; }
+        #total-expenses-box { background-color: #f7baba; }
+        #total-loan-given-box { background-color: #aeb4e6; }
+        #total-loan-taken-box { background-color: #f9f7a7; }
+        .amount { font-size: 2em; font-weight: bold; margin-top: 5px; }
+
+        /* --- Controls (Buttons, Inputs, Filters) --- */
+        .controls { margin: 20px 0; padding: 20px; background: #fff; border-radius: 10px; width: 90%; max-width: 760px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); display: flex; gap: 10px; flex-wrap: wrap; align-items: center; justify-content: space-between; }
+        .controls button, .controls select { padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; }
+        #export-btn { background-color: #4CAF50; color: white; }
+        #import-btn { background-color: #2196F3; color: white; }
+        #filter-type { padding: 10px; border: 1px solid #ccc; }
+
+        .transaction-input { margin-top: 0; }
+        .transaction-input input, .transaction-input select { padding: 10px; border-radius: 5px; border: 1px solid #ccc; flex-grow: 1; }
+        .transaction-input button { background-color: #ff9800; color: white; border: none; flex-grow: 1; }
+        
+        /* --- Transaction List --- */
+        #transactions-list { width: 90%; max-width: 800px; }
+        .transaction-item { display: flex; justify-content: space-between; align-items: center; padding: 10px; margin-bottom: 5px; background: #fff; border-radius: 5px; box-shadow: 0 1px 2px rgba(0,0,0,0.05); border-left: 5px solid; }
+        .item-income { border-left-color: #4CAF50; }
+        .item-expense { border-left-color: #f44336; }
+        .item-loan-given { border-left-color: #2196F3; }
+        .item-loan-taken { border-left-color: #FFC107; }
+        .transaction-item button { background-color: #f44336; color: white; border: none; padding: 5px 10px; border-radius: 5px; cursor: pointer; }
+    </style>
+</head>
+<body>
+
+    <div class="dashboard-grid">
+        <div class="current-balance-box box">
+            Current Total Balance
+            <div id="current-balance" class="amount">₹0.00</div>
+        </div>
+
+        <div id="total-income-box" class="box">
+            Income
+            <div id="total-income" class="amount">₹0.00</div>
+        </div>
+        <div id="total-expenses-box" class="box">
+            Expenses
+            <div id="total-expenses" class="amount">₹0.00</div>
+        </div>
+
+        <div id="total-loan-given-box" class="box">
+            Loan Given Total
+            <div id="total-loan-given" class="amount">₹0.00</div>
+        </div>
+        <div id="total-loan-taken-box" class="box">
+            Loan Taken Total
+            <div id="total-loan-taken" class="amount">₹0.00</div>
+        </div>
+    </div>
+
+    <div class="controls">
+        <div>
+            <button id="export-btn" onclick="exportDataAsJson()">Export Data (Save to Drive) 💾</button>
+            <button id="import-btn" onclick="document.getElementById('file-input').click()">Import Data (Load from Drive) 📂</button>
+            <input type="file" id="file-input" accept=".json" style="display: none;" onchange="importDataFromJson(event)">
+        </div>
+
+        <div>
+            <h3>🔍 Filter:</h3>
+            <select id="filter-type" onchange="updateDashboard()">
+                <option value="all">Show All</option>
+                <option value="income">Income</option>
+                <option value="expense">Expense</option>
+                <option value="loan-given">Loan Given</option>
+                <option value="loan-taken">Loan Taken</option>
+            </select>
+        </div>
+    </div>
+    
+    <div class="transaction-input controls">
+        <input type="number" id="amount-input" placeholder="Amount (₹)" min="0.01" step="0.01">
+        <select id="type-select">
+            <option value="income">Income</option>
+            <option value="expense">Expense</option>
+            <option value="loan-given">Loan Given</option>
+            <option value="loan-taken">Loan Taken</option>
+        </select>
+        <input type="text" id="context-input" placeholder="Description/Context (e.g., Salary, Groceries)" required>
+        <button onclick="addEntry()">Add Entry</button>
+    </div>
+
+    <h2>Transaction History</h2>
+    <div id="transactions-list">
+        </div>
+
+    <script>
+        let transactions = [];
+
+        // --- Core Logic: Calculation and Rendering ---
+
+        function updateDashboard() {
+            let income = 0;
+            let expenses = 0;
+            let loanGiven = 0;
+            let loanTaken = 0;
+
+            transactions.forEach(t => {
+                const amount = parseFloat(t.amount);
+                switch (t.type) {
+                    case 'income': income += amount; break;
+                    case 'expense': expenses += amount; break;
+                    case 'loan-given': loanGiven += amount; break;
+                    case 'loan-taken': loanTaken += amount; break;
+                }
+            });
+
+            // Formula: Income + Loan Taken - Expenses - Loan Given
+            const currentTotalBalance = income + loanTaken - expenses - loanGiven;
+
+            // Update the main boxes
+            document.getElementById('current-balance').textContent = `₹${currentTotalBalance.toFixed(2)}`;
+            document.getElementById('total-income').textContent = `₹${income.toFixed(2)}`;
+            document.getElementById('total-expenses').textContent = `₹${expenses.toFixed(2)}`;
+            document.getElementById('total-loan-given').textContent = `₹${loanGiven.toFixed(2)}`;
+            document.getElementById('total-loan-taken').textContent = `₹${loanTaken.toFixed(2)}`;
+
+            renderTransactionList();
+        }
+
+        function renderTransactionList() {
+            const listContainer = document.getElementById('transactions-list');
+            listContainer.innerHTML = ''; // Clear existing list
+            
+            // 1. Get the current filter value
+            const filterValue = document.getElementById('filter-type').value;
+
+            // 2. Filter transactions based on selection
+            let filteredTransactions = transactions;
+            
+            if (filterValue !== 'all') {
+                filteredTransactions = transactions.filter(t => t.type === filterValue);
+            }
+            
+            // 3. Render the filtered list (reversed for latest-first view)
+            [...filteredTransactions].reverse().forEach(t => { 
+                const item = document.createElement('div');
+                // Use a class based on type for visual distinction
+                item.className = `transaction-item item-${t.type}`;
+                
+                let typeLabel = t.type.replace('-', ' ').toUpperCase();
+                let amountColor = (t.type === 'income' || t.type === 'loan-taken') ? 'green' : 'red';
+
+                item.innerHTML = `
+                    <span style="color: ${amountColor};">
+                        ${typeLabel}: ₹${t.amount.toFixed(2)} 
+                        <span style="font-size: 0.9em; color: #555;">(${t.context})</span> 
+                    </span>
+                    <button onclick="deleteEntry(${t.id})">Delete</button>
+                `;
+                listContainer.appendChild(item);
+            });
+
+            // 4. Show a message if no items match the filter
+            if (filteredTransactions.length === 0 && transactions.length > 0) {
+                 listContainer.innerHTML = `<p style="text-align: center; color: #777;">No transactions found for type: ${filterValue.toUpperCase()}.</p>`;
+            } else if (transactions.length === 0) {
+                 listContainer.innerHTML = `<p style="text-align: center; color: #777;">No transactions recorded. Add an entry above.</p>`;
+            }
+        }
+
+        // --- Transaction Management ---
+
+        function addEntry() {
+            const amountInput = document.getElementById('amount-input');
+            const typeSelect = document.getElementById('type-select');
+            const contextInput = document.getElementById('context-input');
+            
+            const amount = parseFloat(amountInput.value);
+            const type = typeSelect.value;
+            const context = contextInput.value.trim();
+
+            if (isNaN(amount) || amount <= 0 || context === '') {
+                alert('Please ensure the amount is valid and the context is filled.');
+                return;
+            }
+
+            const newTransaction = {
+                id: Date.now(),
+                amount: amount,
+                type: type,
+                date: new Date().toISOString().slice(0, 10),
+                context: context
+            };
+
+            transactions.push(newTransaction);
+            updateDashboard(); 
+
+            // Clear the form
+            amountInput.value = '';
+            contextInput.value = '';
+        }
+
+        function deleteEntry(idToDelete) {
+            // Filter creates a NEW array without the item to delete
+            transactions = transactions.filter(t => t.id !== idToDelete);
+            updateDashboard(); 
+        }
+
+        // --- File Download/Upload Logic (Portable Saving) ---
+
+        function exportDataAsJson() {
+            if (transactions.length === 0) {
+                alert("The transaction list is empty. Nothing to export.");
+                return;
+            }
+            
+            // 1. Convert to formatted JSON string
+            const dataStr = JSON.stringify(transactions, null, 2); 
+            const blob = new Blob([dataStr], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            
+            // Set download file name
+            link.href = url;
+            link.download = 'finance_data_' + new Date().toISOString().slice(0, 10) + '.json';
+            
+            // Trigger download
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+
+            alert("Data exported successfully! Save the JSON file to your pendrive or drive.");
+        }
+
+        function importDataFromJson(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+
+            reader.onload = function(e) {
+                try {
+                    const importedData = JSON.parse(e.target.result);
+                    
+                    if (Array.isArray(importedData)) {
+                        transactions = importedData;
+                        updateDashboard(); 
+                        alert(`Successfully imported ${transactions.length} transactions.`);
+                    } else {
+                        alert('Error: Imported file does not contain a valid transaction array.');
+                    }
+                } catch (error) {
+                    alert('Error: Could not read or parse the JSON file.');
+                }
+                event.target.value = ''; 
+            };
+            reader.readAsText(file);
+        }
+
+        // Initialize the dashboard on page load (starts with empty data)
+        window.onload = updateDashboard;
+
+    </script>
+</body>
+</html>
